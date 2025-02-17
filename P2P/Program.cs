@@ -40,8 +40,16 @@ class P2PFileTransfer
             TcpClient client = new TcpClient();
             await client.ConnectAsync(ip, 5000);
             NetworkStream stream = client.GetStream();
+
+            // Send file metadata first
+            string fileName = Path.GetFileName(filePath);
+            byte[] fileNameBytes = Encoding.UTF8.GetBytes(fileName + "\n");
+            await stream.WriteAsync(fileNameBytes, 0, fileNameBytes.Length);
+
+            // Send file content
             byte[] fileBytes = await File.ReadAllBytesAsync(filePath);
             await stream.WriteAsync(fileBytes, 0, fileBytes.Length);
+
             Console.WriteLine("File sent successfully.");
             client.Close();
         }
@@ -57,12 +65,19 @@ class P2PFileTransfer
         {
             TcpListener listener = new TcpListener(IPAddress.Any, 5000);
             listener.Start();
-            Console.WriteLine("Waiting for connection...");
+            Console.WriteLine($"Waiting for connection...\nReceiving Server IP: {GetLocalIPAddress()}");
+            
             TcpClient client = await listener.AcceptTcpClientAsync();
             NetworkStream stream = client.GetStream();
-            using FileStream fileStream = new FileStream("received.txt", FileMode.Create);
+
+            // Read file metadata first
+            using StreamReader reader = new StreamReader(stream, Encoding.UTF8);
+            string fileName = await reader.ReadLineAsync();
+
+            using FileStream fileStream = new FileStream(fileName, FileMode.Create);
             await stream.CopyToAsync(fileStream);
-            Console.WriteLine("File received successfully.");
+
+            Console.WriteLine($"File '{fileName}' received successfully.");
             client.Close();
             listener.Stop();
         }
@@ -70,5 +85,13 @@ class P2PFileTransfer
         {
             Console.WriteLine($"Error: {ex.Message}");
         }
+    }
+
+    static string GetLocalIPAddress()
+    {
+        using Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0);
+        socket.Connect("8.8.8.8", 65530);
+        IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
+        return endPoint?.Address.ToString() ?? "Unknown";
     }
 }
